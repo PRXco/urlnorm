@@ -203,7 +203,7 @@ def norm_path(scheme, path):
         return '/'
     return path
 
-MAX_IP = 0xffffffffL
+MAX_IP = 0xffffffff
 
 
 def int2ip(ipnum):
