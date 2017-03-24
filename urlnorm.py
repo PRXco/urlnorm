@@ -67,9 +67,22 @@ SOFTWARE.
 # also update in setup.py
 __version__ = "1.1.4"
 
-from urlparse import urlparse, urlunparse
-from string import lower
 import re
+
+try:
+    # PY3
+    from urllib.parse import urlparse, urlunparse
+except ImportError:
+    # PY2
+    from urlparse import urlparse, urlunparse
+
+try:
+    # PY2
+    from string import lower
+except ImportError:
+    # PY3
+    def lower(s):
+        return s.lower()
 
 
 class InvalidUrl(Exception):
