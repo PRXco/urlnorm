@@ -68,12 +68,18 @@ SOFTWARE.
 __version__ = "1.1.4"
 
 import re
+import sys
 
-try:
-    # PY3
-    from urllib.parse import urlparse, urlunparse as urlunparse_py3, ParseResult
-    PY3 = True
+if sys.version_info[0] == 3:
     PY2 = False
+    PY3 = True
+elif sys.version_info[0] == 2:
+    PY2 = True
+    PY3 = False
+
+
+if PY3:
+    from urllib.parse import urlparse, urlunparse as urlunparse_py3
     xrange = range
 
     def range(*args, **kwargs):
@@ -87,51 +93,41 @@ try:
     unicode = str
 
     def urlunparse(parts):
-        return urlunparse_py3(urltuple_of_unicode(parts)).encode('utf-8')
+        return _utf8(urlunparse_py3(parts))
 
-except ImportError:
-    # PY2
+    def lower(s):
+        return s.lower()
+
+elif PY2:
     from __builtin__ import unichr
-    from urlparse import urlparse, urlunparse, ParseResult
+    from urlparse import urlparse, urlunparse
 
     bytes = str
 
     PY3 = False
     PY2 = True
-
-try:
-    # PY2
     from string import lower
-except ImportError:
-    # PY3
-    def lower(s):
-        return s.lower()
-
-
-def force_unicode(value, encoding='utf-8'):
-    if isinstance(value, bytes):
-        return value.decode(encoding)
-    return value
-
-
-def force_bytes(value, encoding='utf-8'):
-    if isinstance(value, unicode):
-        return value.encode(encoding)
-    return value
 
 
 def re_match(re_obj, s):
     if PY2:
         return re_obj.match(s)
     elif PY3:
-        return re_obj.match(force_unicode(s))
-
-
-def urltuple_of_unicode(tup):
-    return ParseResult(*(force_unicode(el) for el in tup))
+        return re_obj.match(_unicode(s))
 
 
 def bytes_idx(s, idx):
+    """
+    In Python2:
+    >>> b'abc'[0]
+    b'a'
+
+    In Python3:
+    >>> b'abc'[0]
+    97
+
+    This normalizes to the Python 2 version.
+    """
     assert isinstance(idx, int)
     if PY2:
         # indexing a bytes object in PY2
@@ -240,9 +236,7 @@ def unquote_safe(s, unsafe_list):
 def norm(url):
     """given a string URL, return its normalized/unicode form"""
     url = _unicode(url)  # operate on unicode strings
-    url_tuple = urltuple_of_unicode(urlparse(url))
-    normalized_tuple = norm_tuple(*url_tuple)
-
+    normalized_tuple = norm_tuple(*urlparse(url))
     return urlunparse(normalized_tuple)
 
 
@@ -262,12 +256,12 @@ def norm_tuple(scheme, authority, path, parameters, query, fragment):
     parameters = unquote_params(parameters)
     query = unquote_qs(query)
     fragment = unquote_fragment(fragment)
-    return ParseResult(scheme, authority, path, parameters, query, fragment)
+    return (scheme, authority, path, parameters, query, fragment)
 
 
 def norm_path(scheme, path):
-    scheme = force_bytes(scheme)
-    path = force_bytes(path)
+    scheme = _utf8(scheme)
+    path = _utf8(path)
 
     if scheme in _relative_schemes:
         # resolve `/../` and `/./` and `//` components in path as appropriate
@@ -322,11 +316,11 @@ def norm_netloc(scheme, netloc):
     userinfo, host, port = match.groups()
 
     # For py2/py3 compat
-    userinfo = force_bytes(userinfo)
-    host = force_bytes(host)
-    port = force_bytes(port)
-    scheme = force_bytes(scheme)
-    netloc = force_bytes(netloc)
+    userinfo = _utf8(userinfo)
+    host = _utf8(host)
+    port = _utf8(port)
+    scheme = _utf8(scheme)
+    netloc = _utf8(netloc)
 
     # catch a few common errors:
     if host.isdigit():
@@ -348,29 +342,35 @@ def norm_netloc(scheme, netloc):
 
     if userinfo:
         authority = b"%s@%s" % (userinfo, authority)
-    if port and port != _default_port.get(force_bytes(scheme), None):
+    if port and port != _default_port.get(_utf8(scheme), None):
         authority = b"%s:%s" % (authority, port)
     return _unicode(authority)
 
 
 def _idn(subdomain):
+    """
+    If bytestring `subdomain` is punycode-encoded (see IDNA), decodes using IDNA,
+    and returns the decoded string as a UTF8 bytestring.
+
+    Otherwise returns the bytestring as is.
+    """
     if subdomain.startswith(b'xn--'):
         try:
             subdomain = subdomain.decode('idna')
         except UnicodeError:
             raise InvalidUrl('Error converting subdomain %r to IDN' % subdomain)
+        else:
+            return _utf8(subdomain)
     return subdomain
 
 
 def _utf8(value):
     if isinstance(value, unicode):
         return value.encode("utf-8")
-    assert isinstance(value, bytes)
     return value
 
 
 def _unicode(value):
     if isinstance(value, bytes):
         return value.decode("utf-8")
-    assert isinstance(value, unicode)
     return value

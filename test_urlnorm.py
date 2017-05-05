@@ -39,7 +39,7 @@ def pytest_generate_tests(metafunc):
             # note: this breaks the internet for parameters that are positional (stupid nextel) and/or don't have an = sign
             # 'http://test.example/?a=1&b=2&a=3': 'http://test.example/?a=1&a=3&b=2', # should be in sorted/grouped order
             
-            # 'http://s.xn--q-bga.de/':       'http://s.q\xc3\xa9.de/'.decode('utf8'), # should be in idna format
+            b'http://s.xn--q-bga.de/':       b'http://s.q\xc3\xa9.de/'.decode('utf8'), # should be in idna format
             b'http://test.example/?':        b'http://test.example/', # no trailing ?
             b'http://test.example?':       b'http://test.example/', # with trailing /
             b'http://a.COM/path/?b&a' : b'http://a.com/path/?b&a',
@@ -48,7 +48,7 @@ def pytest_generate_tests(metafunc):
             u'http://XBLA\u306eXbox.com'.encode('utf8'): b'http://xbla\xe3\x81\xaexbox.com/'.decode('utf8'),
             u'http://XBLA\u306eXbox.com': b'http://xbla\xe3\x81\xaexbox.com/'.decode('utf8'),
             # test idna + utf8 domain
-            # u'http://xn--q-bga.XBLA\u306eXbox.com'.encode('utf8'): 'http://q\xc3\xa9.xbla\xe3\x81\xaexbox.com'.decode('utf8'),
+            u'http://xn--q-bga.XBLA\u306eXbox.com'.encode('utf8'): b'http://q\xc3\xa9.xbla\xe3\x81\xaexbox.com/'.decode('utf8'),
             b'http://ja.wikipedia.org/wiki/%E3%82%AD%E3%83%A3%E3%82%BF%E3%83%94%E3%83%A9%E3%83%BC%E3%82%B8%E3%83%A3%E3%83%91%E3%83%B3': b'http://ja.wikipedia.org/wiki/\xe3\x82\xad\xe3\x83\xa3\xe3\x82\xbf\xe3\x83\x94\xe3\x83\xa9\xe3\x83\xbc\xe3\x82\xb8\xe3\x83\xa3\xe3\x83\x91\xe3\x83\xb3'.decode('utf8'),
             b'http://test.example/\xe3\x82\xad': b'http://test.example/\xe3\x82\xad',
             
