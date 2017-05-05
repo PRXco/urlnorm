@@ -71,10 +71,33 @@ import re
 
 try:
     # PY3
-    from urllib.parse import urlparse, urlunparse
+    from urllib.parse import urlparse, urlunparse as urlunparse_py3, ParseResult
+    PY3 = True
+    PY2 = False
+    xrange = range
+
+    def range(*args, **kwargs):
+        return list(xrange(*args, **kwargs))
+
+    unichr = chr
+
+    def chr(i):
+        return bytes([i])
+
+    unicode = str
+
+    def urlunparse(parts):
+        return urlunparse_py3(urltuple_of_unicode(parts)).encode('utf-8')
+
 except ImportError:
     # PY2
-    from urlparse import urlparse, urlunparse
+    from __builtin__ import unichr
+    from urlparse import urlparse, urlunparse, ParseResult
+
+    bytes = str
+
+    PY3 = False
+    PY2 = True
 
 try:
     # PY2
@@ -85,59 +108,109 @@ except ImportError:
         return s.lower()
 
 
+def force_unicode(value, encoding='utf-8'):
+    if isinstance(value, bytes):
+        return value.decode(encoding)
+    return value
+
+
+def force_bytes(value, encoding='utf-8'):
+    if isinstance(value, unicode):
+        return value.encode(encoding)
+    return value
+
+
+def re_match(re_obj, s):
+    if PY2:
+        return re_obj.match(s)
+    elif PY3:
+        return re_obj.match(force_unicode(s))
+
+
+def urltuple_of_unicode(tup):
+    return ParseResult(*(force_unicode(el) for el in tup))
+
+
+def bytes_idx(s, idx):
+    assert isinstance(idx, int)
+    if PY2:
+        # indexing a bytes object in PY2
+        # returns a single-character bytestring.
+        return s[idx]
+    elif PY3:
+        # indexing a bytes object in PY3 returns
+        # an int.
+        return chr(s[idx])
+
+
 class InvalidUrl(Exception):
     pass
 
 _server_authority = re.compile('^(?:([^\@]+)\@)?([^\:\[\]]+|\[[a-fA-F0-9\:\.]+\])(?:\:(.*?))?$')
-_default_port = {'http': '80',
-                 'itms': '80',
-                 'ws': '80',
-                 'https': '443',
-                 'wss': '443',
-                 'gopher': '70',
-                 'news': '119',
-                 'snews': '563',
-                 'nntp': '119',
-                 'snntp': '563',
-                 'ftp': '21',
-                 'telnet': '23',
-                 'prospero': '191',
-                 }
-_relative_schemes = set(['http',
-                         'https',
-                         'ws',
-                         'wss',
-                         'itms',
-                         'news',
-                         'snews',
-                         'nntp',
-                         'snntp',
-                         'ftp',
-                         'file',
-                         ''
-                         ])
+_default_port = {
+    b'http': b'80',
+    b'itms': b'80',
+    b'ws': b'80',
+    b'https': b'443',
+    b'wss': b'443',
+    b'gopher': b'70',
+    b'news': b'119',
+    b'snews': b'563',
+    b'nntp': b'119',
+    b'snntp': b'563',
+    b'ftp': b'21',
+    b'telnet': b'23',
+    b'prospero': b'191',
+}
+_relative_schemes = set([
+    b'http',
+    b'https',
+    b'ws',
+    b'wss',
+    b'itms',
+    b'news',
+    b'snews',
+    b'nntp',
+    b'snntp',
+    b'ftp',
+    b'file',
+    b''
+])
 
-params_unsafe_list = set('?=+%#;')
-qs_unsafe_list = set('?&=+%#')
-fragment_unsafe_list = set('+%#')
-path_unsafe_list = set('/?;%+#')
-_hextochr = dict(('%02x' % i, chr(i)) for i in range(256))
-_hextochr.update(('%02X' % i, chr(i)) for i in range(256))
+params_unsafe_list = b'?=+%#;'
+qs_unsafe_list = b'?&=+%#'
+fragment_unsafe_list = b'+%#'
+path_unsafe_list = b'/?;%+#'
+
+_hextochr = dict((b'%02x' % i, chr(i)) for i in range(256))
+_hextochr.update((b'%02X' % i, chr(i)) for i in range(256))
 
 
 def unquote_path(s):
+    """
+    :rtype: unicode
+    """
     return unquote_safe(s, path_unsafe_list)
 
 
 def unquote_params(s):
+    """
+    :rtype: unicode
+    """
     return unquote_safe(s, params_unsafe_list)
 
 
 def unquote_qs(s):
+    """
+    :rtype: unicode
+    """
     return unquote_safe(s, qs_unsafe_list)
 
 
 def unquote_fragment(s):
+    """
+    :rtype: unicode
+    """
     return unquote_safe(s, fragment_unsafe_list)
 
 
@@ -145,34 +218,37 @@ def unquote_safe(s, unsafe_list):
     """unquote percent escaped string except for percent escape sequences that are in unsafe_list"""
     # note: this build utf8 raw strings ,then does a .decode('utf8') at the end.
     # as a result it's doing .encode('utf8') on each block of the string as it's processed.
-    res = _utf8(s).split('%')
+    res = _utf8(s).split(b'%')
     for i in xrange(1, len(res)):
         item = res[i]
         try:
             raw_chr = _hextochr[item[:2]]
             if raw_chr in unsafe_list or ord(raw_chr) < 20:
                 # leave it unescaped (but uppercase the percent escape)
-                res[i] = '%' + item[:2].upper() + item[2:]
+                res[i] = b'%' + item[:2].upper() + item[2:]
             else:
                 res[i] = raw_chr + item[2:]
         except KeyError:
-            res[i] = '%' + item
+            res[i] = b'%' + item
         except UnicodeDecodeError:
             # note: i'm not sure what this does
             res[i] = unichr(int(item[:2], 16)) + item[2:]
-    o = "".join(res)
+    o = b"".join(res)
     return _unicode(o)
 
 
 def norm(url):
     """given a string URL, return its normalized/unicode form"""
     url = _unicode(url)  # operate on unicode strings
-    url_tuple = urlparse(url)
+    url_tuple = urltuple_of_unicode(urlparse(url))
     normalized_tuple = norm_tuple(*url_tuple)
+
     return urlunparse(normalized_tuple)
+
 
 def norm_tuple(scheme, authority, path, parameters, query, fragment):
     """given individual url components, return its normalized form"""
+
     scheme = lower(scheme)
     if not scheme:
         raise InvalidUrl('missing URL scheme')
@@ -186,34 +262,40 @@ def norm_tuple(scheme, authority, path, parameters, query, fragment):
     parameters = unquote_params(parameters)
     query = unquote_qs(query)
     fragment = unquote_fragment(fragment)
-    return (scheme, authority, path, parameters, query, fragment)
+    return ParseResult(scheme, authority, path, parameters, query, fragment)
 
 
 def norm_path(scheme, path):
+    scheme = force_bytes(scheme)
+    path = force_bytes(path)
+
     if scheme in _relative_schemes:
         # resolve `/../` and `/./` and `//` components in path as appropriate
         i = 0
         parts = []
         start = 0
         while i < len(path):
-            if path[i] == "/" or i == len(path) - 1:
+            if bytes_idx(path, i) == b"/" or i == len(path) - 1:
                 chunk = path[start:i+1]
                 start = i + 1
-                if chunk in ["", "/", ".", "./"]:
+                if chunk in [b"", b"/", b".", b"./"]:
                     # do nothing
                     pass
-                elif chunk in ["..", "../"]:
+                elif chunk in [b"..", b"../"]:
                     if len(parts):
                         parts = parts[:len(parts)-1]
                     else:
                         parts.append(chunk)
                 else:
                     parts.append(chunk)
-            i+=1
-        path = "/"+ ("".join(parts))
+            i += 1
+        path = b"/" + (b"".join(parts))
+
+    # return unicode
     path = unquote_path(path)
     if not path:
-        return '/'
+        return u'/'
+
     return path
 
 MAX_IP = 0xffffffff
@@ -227,44 +309,52 @@ def int2ip(ipnum):
     ip2 = ipnum >> 16 & 0xFF
     ip3 = ipnum >> 8 & 0xFF
     ip4 = ipnum & 0xFF
-    return "%d.%d.%d.%d" % (ip1, ip2, ip3, ip4)
+    return b"%d.%d.%d.%d" % (ip1, ip2, ip3, ip4)
 
 
 def norm_netloc(scheme, netloc):
     if not netloc:
         return netloc
-    match = _server_authority.match(netloc)
+    match = re_match(_server_authority, netloc)
     if not match:
         raise InvalidUrl('no host in netloc %r' % netloc)
 
     userinfo, host, port = match.groups()
+
+    # For py2/py3 compat
+    userinfo = force_bytes(userinfo)
+    host = force_bytes(host)
+    port = force_bytes(port)
+    scheme = force_bytes(scheme)
+    netloc = force_bytes(netloc)
+
     # catch a few common errors:
     if host.isdigit():
         try:
             host = int2ip(int(host))
         except TypeError:
             raise InvalidUrl('host %r does not escape to a valid ip' % host)
-    if host[-1] == '.':
+    if bytes_idx(host, -1) == b'.':
         host = host[:-1]
 
     # bracket check is for ipv6 hosts
-    if '.' not in host and not (host[0] == '[' and host[-1] == ']'):
+    if b'.' not in host and not (bytes_idx(host, 0) == b'[' and bytes_idx(host, -1) == b']'):
         raise InvalidUrl('host %r is not valid' % host)
 
     authority = lower(host)
-    if 'xn--' in authority:
-        subdomains = [_idn(subdomain) for subdomain in authority.split('.')]
-        authority = '.'.join(subdomains)
+    if b'xn--' in authority:
+        subdomains = [_idn(subdomain) for subdomain in authority.split(b'.')]
+        authority = b'.'.join(subdomains)
 
     if userinfo:
-        authority = "%s@%s" % (userinfo, authority)
-    if port and port != _default_port.get(scheme, None):
-        authority = "%s:%s" % (authority, port)
-    return authority
+        authority = b"%s@%s" % (userinfo, authority)
+    if port and port != _default_port.get(force_bytes(scheme), None):
+        authority = b"%s:%s" % (authority, port)
+    return _unicode(authority)
 
 
 def _idn(subdomain):
-    if subdomain.startswith('xn--'):
+    if subdomain.startswith(b'xn--'):
         try:
             subdomain = subdomain.decode('idna')
         except UnicodeError:
@@ -275,12 +365,12 @@ def _idn(subdomain):
 def _utf8(value):
     if isinstance(value, unicode):
         return value.encode("utf-8")
-    assert isinstance(value, str)
+    assert isinstance(value, bytes)
     return value
 
 
 def _unicode(value):
-    if isinstance(value, str):
+    if isinstance(value, bytes):
         return value.decode("utf-8")
     assert isinstance(value, unicode)
     return value
